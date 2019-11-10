@@ -1,0 +1,2 @@
+[requires]
+glfw/3.3@bincrafters/stable
