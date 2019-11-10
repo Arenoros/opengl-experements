@@ -27,6 +27,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="glsl\fragm.glsl" />
+    <None Include="glsl\uniform.glsl" />
     <None Include="glsl\vertex.glsl" />
     <None Include="glsl\yelow.glsl" />
   </ItemGroup>

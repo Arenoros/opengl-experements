@@ -12,6 +12,7 @@ namespace glsl {
     MAP_SHADER(vertex);
     MAP_SHADER(fragm);
     MAP_SHADER(yelow);
+    MAP_SHADER(uniform);
 }  // namespace glsl
 
 inline GLuint loadShaderFrom(std::string_view path, GLenum shaderType) {
@@ -138,4 +139,8 @@ public:
         // shaders.emplace_back(shader);
     }
     void run() { glUseProgram(id); }
+
+    GLint uniformLoaction(const char* name) {
+        return glGetUniformLocation(id, name);
+    }
 };

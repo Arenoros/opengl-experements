@@ -2,8 +2,9 @@
 #include "glsl_loader.h"
 #include <array>
 #include <cassert>
+#include <functional>
 
-GLFWwindow* createMainWindow(int width, int height, const char* title = nullptr) {
+void baseInit() {
     //Инициализация GLFW
     glfwInit();
     //Настройка GLFW
@@ -16,6 +17,9 @@ GLFWwindow* createMainWindow(int width, int height, const char* title = nullptr)
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
     //Выключение возможности изменения размера окна
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+}
+
+GLFWwindow* createMainWindow(int width, int height, const char* title = nullptr) {
     GLFWwindow* window = glfwCreateWindow(width, height, title ? title : "", nullptr, nullptr);
     if(window == nullptr) {
         std::cout << "Failed to create GLFW window" << std::endl;
@@ -68,7 +72,7 @@ struct IndexBuffer {
     /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
         glGenBuffers(1, &VBO);
     }*/
-    IndexBuffer(GLuint data[N * 3]) : data(data) { glGenBuffers(1, &buf); }
+    IndexBuffer(GLuint data[N * 3]): data(data) { glGenBuffers(1, &buf); }
     IndexBuffer(std::initializer_list<GLuint> l) {
         glGenBuffers(1, &buf);
         assert(l.size() == N);
@@ -96,23 +100,23 @@ IndexBuffer(GLuint (&)[Size])->IndexBuffer<Size>;
 template<size_t N>
 struct VertexBuffer {
     GLuint buf;
-    GLfloat data[N*3];
+    GLfloat data[N];
     VertexBuffer(const VertexBuffer&) = delete;
     VertexBuffer& operator=(const VertexBuffer&) = delete;
     ~VertexBuffer() {}
     /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
         glGenBuffers(1, &VBO);
     }*/
-    VertexBuffer(GLfloat data[N * 3]) : data(data) { glGenBuffers(1, &buf); }
+    VertexBuffer(GLfloat data[N]): data(data) { glGenBuffers(1, &buf); }
     VertexBuffer(std::initializer_list<GLfloat> l) {
         glGenBuffers(1, &buf);
-        assert(l.size() == N * 3);
-        std::copy(l.begin(), l.begin() + N * 3, data);
+        assert(l.size() == N);
+        std::copy(l.begin(), l.begin() + N, data);
     }
 
     VertexBuffer& operator=(std::initializer_list<GLfloat> l) {
-        assert(l.size() == N * 3);
-        std::copy(l.begin(), l.begin() + N * 3, data);
+        assert(l.size() == N);
+        std::copy(l.begin(), l.begin() + N, data);
         return *this;
     }
 
@@ -122,96 +126,145 @@ struct VertexBuffer {
     }
 };
 template<class... U>
-VertexBuffer(GLfloat, U...)->VertexBuffer<(1 + sizeof...(U)) / 3>;
+VertexBuffer(GLfloat, U...)->VertexBuffer<1 + sizeof...(U)>;
 
 template<size_t Size>
-VertexBuffer(GLfloat (&)[Size])->VertexBuffer<Size / 3>;
+VertexBuffer(GLfloat (&)[Size])->VertexBuffer<Size>;
+
+template<size_t N>
+class VertexArrays {
+    GLuint VAOs[N];
+
+public:
+    VertexArrays() { glGenVertexArrays(N, VAOs); }
+    template<size_t Pos>
+    void on(std::function<void()> fun) {
+        static_assert(Pos < N);
+        // 1. Привязываем VAO
+        glBindVertexArray(VAOs[Pos]);
+        fun();
+        // 4. Отвязываем VAO
+        glBindVertexArray(0);
+    }
+    void bind(int Pos) {
+        assert(Pos < N);
+        // 1. Привязываем VAO
+        glBindVertexArray(VAOs[Pos]);
+    }
+};
+template<class T>
+struct GLType;
+#define GLTypeMap(CType, _GLType)                                                                                       \
+    template<>                                                                                                         \
+    struct GLType<CType> {                                                                                             \
+        enum { type = _GLType };                                                                                        \
+    }
+
+GLTypeMap(GLfloat, GL_FLOAT);
+GLTypeMap(GLint, GL_INT);
+
+
+template<class T>
+void setAttribute(GLint pos, GLint count, GLboolean normalize, GLint step, GLint off) {
+    off *= sizeof(T);
+    glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), &off);
+    glEnableVertexAttribArray(pos);
+}
 
 int main() {
+    baseInit();
     auto window = createMainWindow(800, 600);
     glfwSetKeyCallback(window, key_callback);
     glfwSetDropCallback(window, drop_callback);
-    VertexBuffer first {
-        0.5f, 0.5f, 0.0f,  // Верхний правый угол
-        0.5f, -0.5f, 0.0f,  // Нижний правый угол
-        -0.5f, 0.5f, 0.0f   // Верхний левый угол
+    // clang-format off
+    //VertexBuffer first {
+    //    0.5f, 0.5f, 0.0f,  // Верхний правый угол
+    //    0.5f, -0.5f, 0.0f,  // Нижний правый угол
+    //    -0.5f, 0.5f, 0.0f   // Верхний левый угол
+    //};
+    //VertexBuffer second {
+    //    0.5f, -0.5f, 0.0f,  // Нижний правый угол
+    //    -0.5f, -0.5f, 0.0f,  // Нижний левый угол
+    //    -0.5f, 0.5f, 0.0f   // Верхний левый угол
+    //};
+    //IndexBuffer indices {  // Помните, что мы начинаем с 0!
+    //    0, 1, 3,   // Первый треугольник
+    //    1, 2, 3    // Второй треугольник
+    //};
+    
+    VertexBuffer shape_and_color = {
+        // Positions         // Colors
+         0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,  // Bottom Right
+        -0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,  // Bottom Left
+         0.0f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f   // Top 
     };
-    VertexBuffer second {
-        0.5f, -0.5f, 0.0f,  // Нижний правый угол
-        -0.5f, -0.5f, 0.0f,  // Нижний левый угол
-        -0.5f, 0.5f, 0.0f   // Верхний левый угол
-    };
-    IndexBuffer indices {  // Помните, что мы начинаем с 0!
-        0, 1, 3,   // Первый треугольник
-        1, 2, 3    // Второй треугольник
-    };
+    // clang-format on
 
-    ShaderProgram y_triangle, o_triangle;
+    ShaderProgram program;
     {
         ShaderType vertex(glsl::vertex, GL_VERTEX_SHADER);
-        ShaderType orange(glsl::fragm, GL_FRAGMENT_SHADER);
-        ShaderType yelow(glsl::yelow, GL_FRAGMENT_SHADER);
+        ShaderType fragm(glsl::fragm, GL_FRAGMENT_SHADER);
+        /* ShaderType yelow(glsl::yelow, GL_FRAGMENT_SHADER);
+         ShaderType uniform(glsl::uniform, GL_FRAGMENT_SHADER);*/
 
-        o_triangle.attachShader(vertex);
-        o_triangle.attachShader(orange);
-        o_triangle.compile();
-
-        y_triangle.attachShader(vertex);
-        y_triangle.attachShader(yelow);
-        y_triangle.compile();
+        program.attachShader(vertex);
+        program.attachShader(fragm);
+        program.compile();
     }
-
-    GLuint VAOs[2];
-    glGenVertexArrays(2, VAOs);
+    VertexArrays<2> VAOs;
 
     // ================================
     // First Triangle setup
     // ===============================
-    // 1. Привязываем VAO
-    glBindVertexArray(VAOs[0]);
-    // 2. Копируем наш массив вершин в буфер для OpenGL
-
-    first.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
-    //indices.bind(GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
-
-    // 3. Устанавливаем указатели на вершинные атрибуты
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat),nullptr);
-    glEnableVertexAttribArray(0);
-    // 4. Отвязываем VAO
-    glBindVertexArray(0);
-
+    VAOs.on<0>([&shape_and_color] {
+        // Копируем наш массив вершин в буфер для OpenGL
+        shape_and_color.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+        // Устанавливаем указатели на вершинные атрибуты
+        setAttribute<GLfloat>(0, 3, GL_FALSE, 6, 0);
+        setAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
+    });
     // ================================
     // Second Triangle setup
     // ===============================
-    glBindVertexArray(VAOs[1]);
-    second.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), nullptr);
-    glEnableVertexAttribArray(0);
-    glBindVertexArray(0);
+    // VAOs.on<1>([&second] {
+    //    // Копируем наш массив вершин в буфер для OpenGL
+    //    second.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+    //    // indices.bind(GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
+    //    // Устанавливаем указатели на вершинные атрибуты
+    //    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), nullptr);
+    //    glEnableVertexAttribArray(0);
+    //});
 
     while(!glfwWindowShouldClose(window)) {
-        // Check if any events have been activiated (key pressed, mouse moved etc.) and call corresponding response functions
+        // Check if any events have been activiated (key pressed, mouse moved etc.) and call corresponding response
+        // functions
         glfwPollEvents();
         // Render
-       // Clear the colorbuffer
+        // Clear the colorbuffer
         glClearColor(0.2f, 0.3f, 0.3f, 0.4f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Now when we want to draw the triangle we first use the vertex and orange fragment shader from the first program.
-        o_triangle.run();
-        // Draw the first triangle using the data from our first VAO
-        glBindVertexArray(VAOs[0]);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        /*       GLfloat timeValue = glfwGetTime();
+               GLfloat greenValue = (sin(timeValue) / 2) + 0.5;
+               GLfloat rVal = (sin(timeValue * 3) / 2) + 0.5;
+               GLfloat bVal = (sin(timeValue * 5) / 2) + 0.5;
+               GLint vertexColorLocation = program.uniformLoaction("ourColor");*/
 
-        y_triangle.run();
-        glBindVertexArray(VAOs[1]);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        // Now when we want to draw the triangle we first use the vertex and orange fragment shader from the first
+        // program.
+        program.run();
+        // glUniform4f(vertexColorLocation, rVal, greenValue, bVal, 1.0f);
+        // Draw the first triangle using the data from our first VAO
+        VAOs.on<0>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
+
+        // y_triangle.run();
+        // VAOs.on<1>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
 
         /*glUseProgram(program1);
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);*/
 
-        glBindVertexArray(0);
+        // glBindVertexArray(0);
         glfwSwapBuffers(window);
     }
     glfwTerminate();
