@@ -154,18 +154,17 @@ public:
 };
 template<class T>
 struct GLType;
-#define GLTypeMap(CType, _GLType)                                                                                       \
+#define GLTypeMap(CType, _GLType)                                                                                      \
     template<>                                                                                                         \
     struct GLType<CType> {                                                                                             \
-        enum { type = _GLType };                                                                                        \
+        enum { type = _GLType };                                                                                       \
     }
 
 GLTypeMap(GLfloat, GL_FLOAT);
 GLTypeMap(GLint, GL_INT);
 
-
 template<class T>
-void setAttribute(GLint pos, GLint count, GLboolean normalize, GLint step, GLint off) {
+void setVertexAttribute(GLint pos, GLint count, GLboolean normalize, GLint step, GLint off) {
     off *= sizeof(T);
     glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), &off);
     glEnableVertexAttribArray(pos);
@@ -176,22 +175,8 @@ int main() {
     auto window = createMainWindow(800, 600);
     glfwSetKeyCallback(window, key_callback);
     glfwSetDropCallback(window, drop_callback);
+
     // clang-format off
-    //VertexBuffer first {
-    //    0.5f, 0.5f, 0.0f,  // Верхний правый угол
-    //    0.5f, -0.5f, 0.0f,  // Нижний правый угол
-    //    -0.5f, 0.5f, 0.0f   // Верхний левый угол
-    //};
-    //VertexBuffer second {
-    //    0.5f, -0.5f, 0.0f,  // Нижний правый угол
-    //    -0.5f, -0.5f, 0.0f,  // Нижний левый угол
-    //    -0.5f, 0.5f, 0.0f   // Верхний левый угол
-    //};
-    //IndexBuffer indices {  // Помните, что мы начинаем с 0!
-    //    0, 1, 3,   // Первый треугольник
-    //    1, 2, 3    // Второй треугольник
-    //};
-    
     VertexBuffer shape_and_color = {
         // Positions         // Colors
          0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,  // Bottom Right
@@ -201,39 +186,19 @@ int main() {
     // clang-format on
 
     ShaderProgram program;
-    {
-        ShaderType vertex(glsl::vertex, GL_VERTEX_SHADER);
-        ShaderType fragm(glsl::fragm, GL_FRAGMENT_SHADER);
-        /* ShaderType yelow(glsl::yelow, GL_FRAGMENT_SHADER);
-         ShaderType uniform(glsl::uniform, GL_FRAGMENT_SHADER);*/
+    program.attachShader({glsl::fragm, GL_FRAGMENT_SHADER});
+    program.attachShader({glsl::vertex, GL_VERTEX_SHADER});
+    program.compile();
+   
+    VertexArrays<1> VAOs;
 
-        program.attachShader(vertex);
-        program.attachShader(fragm);
-        program.compile();
-    }
-    VertexArrays<2> VAOs;
-
-    // ================================
-    // First Triangle setup
-    // ===============================
     VAOs.on<0>([&shape_and_color] {
         // Копируем наш массив вершин в буфер для OpenGL
         shape_and_color.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
         // Устанавливаем указатели на вершинные атрибуты
-        setAttribute<GLfloat>(0, 3, GL_FALSE, 6, 0);
-        setAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
+        setVertexAttribute<GLfloat>(0, 3, GL_FALSE, 6, 0);
+        setVertexAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
     });
-    // ================================
-    // Second Triangle setup
-    // ===============================
-    // VAOs.on<1>([&second] {
-    //    // Копируем наш массив вершин в буфер для OpenGL
-    //    second.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
-    //    // indices.bind(GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
-    //    // Устанавливаем указатели на вершинные атрибуты
-    //    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), nullptr);
-    //    glEnableVertexAttribArray(0);
-    //});
 
     while(!glfwWindowShouldClose(window)) {
         // Check if any events have been activiated (key pressed, mouse moved etc.) and call corresponding response
@@ -244,27 +209,10 @@ int main() {
         glClearColor(0.2f, 0.3f, 0.3f, 0.4f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        /*       GLfloat timeValue = glfwGetTime();
-               GLfloat greenValue = (sin(timeValue) / 2) + 0.5;
-               GLfloat rVal = (sin(timeValue * 3) / 2) + 0.5;
-               GLfloat bVal = (sin(timeValue * 5) / 2) + 0.5;
-               GLint vertexColorLocation = program.uniformLoaction("ourColor");*/
-
-        // Now when we want to draw the triangle we first use the vertex and orange fragment shader from the first
-        // program.
         program.run();
-        // glUniform4f(vertexColorLocation, rVal, greenValue, bVal, 1.0f);
-        // Draw the first triangle using the data from our first VAO
+
         VAOs.on<0>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
 
-        // y_triangle.run();
-        // VAOs.on<1>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
-
-        /*glUseProgram(program1);
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);*/
-
-        // glBindVertexArray(0);
         glfwSwapBuffers(window);
     }
     glfwTerminate();

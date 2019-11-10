@@ -1,4 +1,3 @@
-
 #version 460 core
 
 layout (location = 0) in vec3 position; // Устанавливаем позиция переменной с координатами в 0
