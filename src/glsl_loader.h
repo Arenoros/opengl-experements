@@ -47,7 +47,7 @@ inline GLuint loadShaderFrom(std::string_view path, GLenum shaderType) {
     return shaderID;
 }
 
-class ShaderType {
+struct ShaderType {
     GLuint id;
     friend class ShaderProgram;
 

@@ -68,7 +68,7 @@ struct IndexBuffer {
     GLuint data[N];
     IndexBuffer(const IndexBuffer&) = delete;
     IndexBuffer& operator=(const IndexBuffer&) = delete;
-    ~IndexBuffer() {}
+    ~IndexBuffer() { glDeleteBuffers(1, &buf); }
     /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
         glGenBuffers(1, &VBO);
     }*/
@@ -103,7 +103,7 @@ struct VertexBuffer {
     GLfloat data[N];
     VertexBuffer(const VertexBuffer&) = delete;
     VertexBuffer& operator=(const VertexBuffer&) = delete;
-    ~VertexBuffer() {}
+    ~VertexBuffer() { glDeleteBuffers(1, &buf); }
     /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
         glGenBuffers(1, &VBO);
     }*/
@@ -137,6 +137,7 @@ class VertexArrays {
 
 public:
     VertexArrays() { glGenVertexArrays(N, VAOs); }
+    ~VertexArrays() { glDeleteVertexArrays(N, VAOs); }
     template<size_t Pos>
     void on(std::function<void()> fun) {
         static_assert(Pos < N);
@@ -165,8 +166,7 @@ GLTypeMap(GLint, GL_INT);
 
 template<class T>
 void setVertexAttribute(GLint pos, GLint count, GLboolean normalize, GLint step, GLint off) {
-    off *= sizeof(T);
-    glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), &off);
+    glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), (GLvoid*)(off * sizeof(T)));
     glEnableVertexAttribArray(pos);
 }
 
@@ -186,33 +186,35 @@ int main() {
     // clang-format on
 
     ShaderProgram program;
-    program.attachShader({glsl::fragm, GL_FRAGMENT_SHADER});
     program.attachShader({glsl::vertex, GL_VERTEX_SHADER});
+    program.attachShader({glsl::fragm, GL_FRAGMENT_SHADER});
     program.compile();
-   
+
+    // Set up vertex data (and buffer(s)) and attribute pointers
     VertexArrays<1> VAOs;
 
     VAOs.on<0>([&shape_and_color] {
-        // Копируем наш массив вершин в буфер для OpenGL
         shape_and_color.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
-        // Устанавливаем указатели на вершинные атрибуты
         setVertexAttribute<GLfloat>(0, 3, GL_FALSE, 6, 0);
         setVertexAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
     });
 
+    // Game loop
     while(!glfwWindowShouldClose(window)) {
         // Check if any events have been activiated (key pressed, mouse moved etc.) and call corresponding response
         // functions
         glfwPollEvents();
+
         // Render
         // Clear the colorbuffer
         glClearColor(0.2f, 0.3f, 0.3f, 0.4f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        // Draw the triangle
         program.run();
-
         VAOs.on<0>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
 
+        // Swap the screen buffers
         glfwSwapBuffers(window);
     }
     glfwTerminate();
