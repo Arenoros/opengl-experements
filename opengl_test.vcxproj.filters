@@ -24,6 +24,12 @@
     <ClCompile Include="src\stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\files.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\glsl_loader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\glsl_loader.h">
@@ -32,18 +38,21 @@
     <ClInclude Include="src\stdafx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\api.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="glsl\vertex.glsl">
-      <Filter>glsl</Filter>
-    </None>
-    <None Include="glsl\fragm.glsl">
-      <Filter>glsl</Filter>
-    </None>
     <None Include="glsl\yelow.glsl">
       <Filter>glsl</Filter>
     </None>
     <None Include="glsl\uniform.glsl">
+      <Filter>glsl</Filter>
+    </None>
+    <None Include="glsl\shader.frag">
+      <Filter>glsl</Filter>
+    </None>
+    <None Include="glsl\shader.vs">
       <Filter>glsl</Filter>
     </None>
   </ItemGroup>

@@ -1,46 +1,72 @@
 #include "stdafx.h"
-#include "glsl_loader.h"
-#include <array>
-#include <cassert>
-#include <functional>
+#include "api.h"
+#include <thread>
+#include <mutex>
 
-void baseInit() {
-    //Инициализация GLFW
-    glfwInit();
-    //Настройка GLFW
-    //Задается минимальная требуемая версия OpenGL.
-    //Мажорная
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    //Минорная
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_ALPHA_BITS, GL_TRUE);
-    glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
-    //Выключение возможности изменения размера окна
-    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+struct AnalizeFile {
+    double colors[64];
+    GLfloat buf_colors[64];
+    std::string path;
+    std::thread* th;
+    std::mutex mtx;
+    bool stop = false;
+    void set_path(std::string _path) { path = std::move(_path); }
+    void thread_fun() {
+        File file(path, "rb");
+        memset(colors, 0, sizeof(colors));
+        GLfloat step = 0.000001f;
+        uint64_t buf[1024];
+        GLfloat normalize[64];
+        while(file.read(buf, sizeof(buf)) && !stop) {
+            for(int i = 0; i < 1024; i++) {
+                uint64_t v = 1;
+                for(int j = 0; j < 64; ++j) {
+                    if(v & buf[i])
+                        colors[j] += 0.01;
+                    v <<= 1;
+                }
+            }
+            auto [min, it] = std::minmax_element(colors, colors+ 64);
+            double dst = *it - *min;
+            double max = dst != 0.f? 1.f / dst : dst;
+            for(int j = 0; j < 64; ++j) { normalize[j] = (colors[j]-*min) * max; }
+
+            std::lock_guard<std::mutex> lock(mtx);
+            std::memcpy(buf_colors, normalize, sizeof(normalize));
+        }
+    }
+    AnalizeFile(): colors{0}, buf_colors{0}, th(nullptr) {}
+    ~AnalizeFile() {
+        if(th) th->join();
+        delete th;
+    }
+    void Stop() {
+        stop = true;
+        if(th) th->join();
+        delete th;
+        th = nullptr;
+    }
+    void Colors(GLfloat* dst) {
+        std::lock_guard<std::mutex> lock(mtx);
+        std::memcpy(dst, buf_colors, sizeof(buf_colors));
+    }
+    void Run() {
+        if(th) return;
+        stop = false;
+        th = new std::thread(&AnalizeFile::thread_fun, this);
+    }
+};
+AnalizeFile analize;
+
+void drop_callback(GLFWwindow* window, int count, const char** paths) {
+    for(int i = 0; i < count; i++) std::cout << paths[i];
+    if(count > 0) {
+        analize.set_path(paths[0]);
+        analize.Stop();
+        analize.Run();
+    }
 }
 
-GLFWwindow* createMainWindow(int width, int height, const char* title = nullptr) {
-    GLFWwindow* window = glfwCreateWindow(width, height, title ? title : "", nullptr, nullptr);
-    if(window == nullptr) {
-        std::cout << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return nullptr;
-    }
-    glfwMakeContextCurrent(window);
-
-    glewExperimental = GL_TRUE;
-    if(glewInit() != GLEW_OK) {
-        std::cout << "Failed to initialize GLEW" << std::endl;
-        glfwTerminate();
-        return nullptr;
-    }
-
-    int _width, _height;
-    glfwGetFramebufferSize(window, &_width, &_height);
-
-    glViewport(0, 0, _width, _height);
-    return window;
-}
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode) {
     // Когда пользователь нажимает ESC, мы устанавливаем свойство WindowShouldClose в true,
     // и приложение после этого закроется
@@ -49,6 +75,9 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     case GLFW_KEY_ESCAPE:
         glfwSetWindowShouldClose(window, GL_TRUE);
         break;
+    case GLFW_KEY_S:
+        analize.Stop();
+        break;
     case GLFW_KEY_F:
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  // не работает
         break;
@@ -56,118 +85,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // не работает
         break;
     }
-}
-
-void drop_callback(GLFWwindow* window, int count, const char** paths) {
-    for(int i = 0; i < count; i++) std::cout << paths[i];
-}
-
-template<size_t N>
-struct IndexBuffer {
-    GLuint buf;
-    GLuint data[N];
-    IndexBuffer(const IndexBuffer&) = delete;
-    IndexBuffer& operator=(const IndexBuffer&) = delete;
-    ~IndexBuffer() { glDeleteBuffers(1, &buf); }
-    /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
-        glGenBuffers(1, &VBO);
-    }*/
-    IndexBuffer(GLuint data[N * 3]): data(data) { glGenBuffers(1, &buf); }
-    IndexBuffer(std::initializer_list<GLuint> l) {
-        glGenBuffers(1, &buf);
-        assert(l.size() == N);
-        std::copy(l.begin(), l.begin() + N, data);
-    }
-
-    IndexBuffer& operator=(std::initializer_list<GLuint> l) {
-        assert(l.size() == N * 3);
-        std::copy(l.begin(), l.begin() + N, data);
-        return *this;
-    }
-
-    void bind(GLenum target, GLenum usage) {
-        glBindBuffer(target, buf);
-        glBufferData(target, sizeof(data), data, usage);
-    }
-};
-
-template<class... U>
-IndexBuffer(GLuint, U...)->IndexBuffer<1 + sizeof...(U)>;
-
-template<size_t Size>
-IndexBuffer(GLuint (&)[Size])->IndexBuffer<Size>;
-
-template<size_t N>
-struct VertexBuffer {
-    GLuint buf;
-    GLfloat data[N];
-    VertexBuffer(const VertexBuffer&) = delete;
-    VertexBuffer& operator=(const VertexBuffer&) = delete;
-    ~VertexBuffer() { glDeleteBuffers(1, &buf); }
-    /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
-        glGenBuffers(1, &VBO);
-    }*/
-    VertexBuffer(GLfloat data[N]): data(data) { glGenBuffers(1, &buf); }
-    VertexBuffer(std::initializer_list<GLfloat> l) {
-        glGenBuffers(1, &buf);
-        assert(l.size() == N);
-        std::copy(l.begin(), l.begin() + N, data);
-    }
-
-    VertexBuffer& operator=(std::initializer_list<GLfloat> l) {
-        assert(l.size() == N);
-        std::copy(l.begin(), l.begin() + N, data);
-        return *this;
-    }
-
-    void bind(GLenum target, GLenum usage) {
-        glBindBuffer(target, buf);
-        glBufferData(target, sizeof(data), data, usage);
-    }
-};
-template<class... U>
-VertexBuffer(GLfloat, U...)->VertexBuffer<1 + sizeof...(U)>;
-
-template<size_t Size>
-VertexBuffer(GLfloat (&)[Size])->VertexBuffer<Size>;
-
-template<size_t N>
-class VertexArrays {
-    GLuint VAOs[N];
-
-public:
-    VertexArrays() { glGenVertexArrays(N, VAOs); }
-    ~VertexArrays() { glDeleteVertexArrays(N, VAOs); }
-    template<size_t Pos>
-    void on(std::function<void()> fun) {
-        static_assert(Pos < N);
-        // 1. Привязываем VAO
-        glBindVertexArray(VAOs[Pos]);
-        fun();
-        // 4. Отвязываем VAO
-        glBindVertexArray(0);
-    }
-    void bind(int Pos) {
-        assert(Pos < N);
-        // 1. Привязываем VAO
-        glBindVertexArray(VAOs[Pos]);
-    }
-};
-template<class T>
-struct GLType;
-#define GLTypeMap(CType, _GLType)                                                                                      \
-    template<>                                                                                                         \
-    struct GLType<CType> {                                                                                             \
-        enum { type = _GLType };                                                                                       \
-    }
-
-GLTypeMap(GLfloat, GL_FLOAT);
-GLTypeMap(GLint, GL_INT);
-
-template<class T>
-void setVertexAttribute(GLint pos, GLint count, GLboolean normalize, GLint step, GLint off) {
-    glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), (GLvoid*)(off * sizeof(T)));
-    glEnableVertexAttribArray(pos);
 }
 
 int main() {
@@ -179,41 +96,72 @@ int main() {
     // clang-format off
     VertexBuffer shape_and_color = {
         // Positions         // Colors
-         0.5f, -0.5f, 0.0f,   1.0f, 0.0f, 0.0f,  // Bottom Right
-        -0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,  // Bottom Left
-         0.0f,  0.5f, 0.0f,   0.0f, 0.0f, 1.0f   // Top 
+        -0.6f,  -0.8f, 0.0f,   1.0f, 0.0f, 0.0f,  // Bottom Right
+        -0.8f,  -0.8f, 0.0f,   0.0f, 1.0f, 0.0f,  // Bottom Left
+        -0.8f,  -0.6f, 0.0f,   0.0f, 0.0f, 1.0f,  // Top Left
+        -0.6f,  -0.6f, 0.0f,   1.0f, 0.0f, 1.0f   // Top Right
+    };
+    VertexBuffer square {
+        // Positions         
+        -0.6f, -0.8f, 0.0f, // Bottom Right
+        -0.8f, -0.8f, 0.0f, // Bottom Left
+        -0.8f, -0.6f, 0.0f, // Top Left
+        -0.6f, -0.6f, 0.0f  // Top Right
+    };
+    IndexBuffer points {
+        0,1,2,
+        2,3,0
     };
     // clang-format on
-
-    ShaderProgram program;
-    program.attachShader({glsl::vertex, GL_VERTEX_SHADER});
-    program.attachShader({glsl::fragm, GL_FRAGMENT_SHADER});
-    program.compile();
+    glsl::Program<glsl::shader> program;
 
     // Set up vertex data (and buffer(s)) and attribute pointers
-    VertexArrays<1> VAOs;
-
-    VAOs.on<0>([&shape_and_color] {
+    VertexArrays<64> VAOs;
+    for(int i = 0; i < 64; ++i) {
+        VAOs.on(i, [&square, &points] {
+            square.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+            points.bind(GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
+            setVertexAttribute<GLfloat>(0, 3, GL_FALSE, 3, 0);
+            // setVertexAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
+        });
+    }
+    /*VAOs.on<0>([&shape_and_color, &points] {
         shape_and_color.bind(GL_ARRAY_BUFFER, GL_STATIC_DRAW);
+        points.bind(GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW);
         setVertexAttribute<GLfloat>(0, 3, GL_FALSE, 6, 0);
         setVertexAttribute<GLfloat>(1, 3, GL_FALSE, 6, 3);
-    });
+    });*/
 
     // Game loop
+    GLfloat colors[64];
+    GLfloat upd[] = {0, 0, 0};
     while(!glfwWindowShouldClose(window)) {
         // Check if any events have been activiated (key pressed, mouse moved etc.) and call corresponding response
-        // functions
         glfwPollEvents();
 
-        // Render
-        // Clear the colorbuffer
+        analize.Colors(colors);
         glClearColor(0.2f, 0.3f, 0.3f, 0.4f);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        // Draw the triangle
-        program.run();
-        VAOs.on<0>([] { glDrawArrays(GL_TRIANGLES, 0, 3); });
-
+        // auto offset = [](int i) -> GLfloat { return i*0.2f; };
+        for(int i = 0; i < 8; ++i) {
+            for(int j = 0; j < 8; ++j) {
+                VAOs.bind(i * 8 + j);
+                upd[0] = i * 0.2f;
+                upd[1] = j * 0.2f;
+                upd[2] = colors[i * 8 + j];
+                program.use();
+                program.set("upd", upd);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            }
+        }
+        // VAOs.on<0>([&] {
+        //    GLfloat offset = sin(glfwGetTime()) * 0.5f;
+        //    program.use();
+        //    program.set("offset", offset);
+        //    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        //    //glDrawArrays(GL_LINES, 0, 3);
+        //});
+        VAOs.unbind();
         // Swap the screen buffers
         glfwSwapBuffers(window);
     }

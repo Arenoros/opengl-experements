@@ -1,10 +1,15 @@
 @ECHO off
 SET PATH=%PATH%;%~dp0\3rd\xxd
 cd glsl
-for /f %%f in ('dir /b .\*.glsl') do	(
-	xxd.exe -i %%f %%~nf.h
+set res_name=glsl.h
+for /f %%f in ('dir /b .\*.frag') do	(
+	xxd.exe -i %%f >> %res_name%
 	echo compile %%f
 )
-del "..\include\glsl\*.h"
-type *.h > ..\include\glsl\glsl.h
-del "*.h"
+for /f %%f in ('dir /b .\*.vs') do	(
+	xxd.exe -i %%f  >> %res_name%
+	echo compile %%f
+)
+del ..\include\glsl\%res_name%
+xcopy %res_name% ..\include\glsl\
+del %res_name%
