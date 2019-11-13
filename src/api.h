@@ -82,7 +82,11 @@ struct VertexBuffer {
     GLuint buf;
     GLfloat data[N];
     VertexBuffer(const VertexBuffer&) = delete;
-    VertexBuffer& operator=(const VertexBuffer&) = delete;
+    VertexBuffer& operator=(const VertexBuffer<N>& lv) {
+        glGenBuffers(1, &buf);
+        std::memcpy(data, lv.data, sizeof(data));
+        return *this;
+    }
     ~VertexBuffer() { glDeleteBuffers(1, &buf); }
     /*VertexBuffer(float&&... data): vertices({std::move(data)...}) {
         glGenBuffers(1, &VBO);
@@ -154,6 +158,7 @@ void setVertexAttribute(GLint pos, GLint count, GLboolean normalize, GLint step,
     glVertexAttribPointer(pos, count, GLType<T>::type, normalize, step * sizeof(T), (GLvoid*)(off * sizeof(T)));
     glEnableVertexAttribArray(pos);
 }
+
 
 
 class File {

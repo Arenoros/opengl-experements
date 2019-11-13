@@ -7,3 +7,5 @@
 **/*.user
 .obj
 bin
+/build
+/include/glsl/
